@@ -20,7 +20,7 @@ from .operations import (
 )
 from .overlay import build_skill_overlay
 from .packs import list_packs, load_pack
-from .reporting import build_manager_report, build_risk_register
+from .reporting import build_audit_report, build_manager_report, build_resume_brief, build_risk_register
 from .workspace import TrailWorkspace
 
 
@@ -73,6 +73,16 @@ def _tool_definitions() -> list[dict[str, Any]]:
         {
             "name": "trail_get_manager_report",
             "description": "Return a manager-ready project report built from Trail state. Call this when the user asks for status, risks, progress, or next steps.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "trail_get_resume_brief",
+            "description": "Return the concise resume brief for the next instance. Call this when resuming prior work or after context compaction.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "trail_get_audit_report",
+            "description": "Return the current audit report from Trail findings, blockers, and migration packs. Call this before audit or migration review work.",
             "inputSchema": {"type": "object", "properties": {}},
         },
         {
@@ -228,6 +238,12 @@ def _call_tool(workspace: TrailWorkspace, name: str, arguments: dict[str, Any]) 
 
     if name == "trail_get_manager_report":
         return {"report": build_manager_report(workspace)}
+
+    if name == "trail_get_resume_brief":
+        return {"resume": build_resume_brief(workspace)}
+
+    if name == "trail_get_audit_report":
+        return {"audit_report": build_audit_report(workspace)}
 
     if name == "trail_get_risk_register":
         return {"risk_register": build_risk_register(workspace)}

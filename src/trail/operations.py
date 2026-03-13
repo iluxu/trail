@@ -186,6 +186,15 @@ def build_startup_brief(workspace: TrailWorkspace) -> dict[str, Any]:
             "why": "Load the current project state before making assumptions.",
         }
     ]
+    if state := load_state(workspace):
+        if state.get("event_count", 0) > 0:
+            recommended_calls.append(
+                {
+                    "tool": "trail_get_resume_brief",
+                    "arguments": {},
+                    "why": "Load the most concise restart brief before resuming prior work.",
+                }
+            )
     if skill_name:
         recommended_calls.append(
             {
@@ -200,6 +209,13 @@ def build_startup_brief(workspace: TrailWorkspace) -> dict[str, Any]:
                 "tool": "trail_search_knowledge",
                 "arguments": {"query": "business rules migration gaps critical flows EUI21 ECL21", "limit": 8},
                 "why": "Load the migration audit pack before judging parity.",
+            }
+        )
+        recommended_calls.append(
+            {
+                "tool": "trail_get_audit_report",
+                "arguments": {},
+                "why": "Load the current audit posture, open findings, and blockers before auditing.",
             }
         )
     if active_packs(workspace):

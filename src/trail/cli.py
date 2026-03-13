@@ -41,7 +41,15 @@ from .operations import (
 from .packs import activate_pack, import_pack_from_files, list_packs, load_pack
 from .registry import global_registry
 from .reducer import reduce_state
-from .reporting import build_manager_report, build_risk_register, render_manager_report
+from .reporting import (
+    build_audit_report,
+    build_manager_report,
+    build_resume_brief,
+    build_risk_register,
+    render_audit_report,
+    render_manager_report,
+    render_resume_brief,
+)
 from .skills import build_skill_briefing, resolve_skill, trail_usage_guidance
 from .workspace import TrailWorkspace
 
@@ -123,6 +131,8 @@ def _codex_bootstrap_prompt() -> str:
         "Do not rely on memory alone in this session.",
         "Before you inspect files or answer the user, call `trail_get_startup_brief`.",
         "Then execute its recommended Trail calls in order.",
+        "When resuming prior work, prefer `trail_get_resume_brief` over guessing from memory.",
+        "When auditing or reviewing migration work, prefer `trail_get_audit_report` before inspecting diffs.",
     ]
     if skill_name:
         lines.append(f"Active Trail skill: `{skill_name}`.")
@@ -858,10 +868,32 @@ def cmd_report_manager(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_report_audit(args: argparse.Namespace) -> int:
+    workspace = TrailWorkspace.discover()
+    init_workspace(workspace)
+    report = build_audit_report(workspace)
+    if args.json:
+        _print_json(report)
+    else:
+        print(render_audit_report(report))
+    return 0
+
+
 def cmd_report_risks(args: argparse.Namespace) -> int:
     workspace = TrailWorkspace.discover()
     init_workspace(workspace)
     _print_json(build_risk_register(workspace))
+    return 0
+
+
+def cmd_resume(args: argparse.Namespace) -> int:
+    workspace = TrailWorkspace.discover()
+    init_workspace(workspace)
+    report = build_resume_brief(workspace)
+    if args.json:
+        _print_json(report)
+    else:
+        print(render_resume_brief(report))
     return 0
 
 
@@ -1198,6 +1230,10 @@ def build_parser() -> argparse.ArgumentParser:
     handoff_parser.add_argument("--label", help="Optional handoff label")
     handoff_parser.set_defaults(func=cmd_handoff)
 
+    resume_parser = subparsers.add_parser("resume", help="Generate a concise resume brief for the next instance")
+    resume_parser.add_argument("--json", action="store_true", help="Emit the resume brief as JSON")
+    resume_parser.set_defaults(func=cmd_resume)
+
     note_parser = subparsers.add_parser("note", help="Record structured project facts")
     note_subparsers = note_parser.add_subparsers(dest="note_command", required=True)
 
@@ -1411,6 +1447,10 @@ def build_parser() -> argparse.ArgumentParser:
     report_manager_parser = report_subparsers.add_parser("manager", help="Generate a manager-ready status report")
     report_manager_parser.add_argument("--json", action="store_true")
     report_manager_parser.set_defaults(func=cmd_report_manager)
+
+    report_audit_parser = report_subparsers.add_parser("audit", help="Generate the current audit report")
+    report_audit_parser.add_argument("--json", action="store_true")
+    report_audit_parser.set_defaults(func=cmd_report_audit)
 
     report_risks_parser = report_subparsers.add_parser("risks", help="Generate the current Trail risk register")
     report_risks_parser.set_defaults(func=cmd_report_risks)
