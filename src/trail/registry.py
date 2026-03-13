@@ -173,7 +173,13 @@ class GlobalRegistry:
     def get_project(self, identifier: str) -> dict[str, Any] | None:
         self.ensure()
         target = slugify(identifier)
-        resolved = str(Path(identifier).expanduser().resolve()) if identifier.startswith("/") or identifier.startswith("~") else None
+        resolved = None
+        candidate = Path(identifier).expanduser()
+        try:
+            if candidate.exists() or candidate.is_absolute():
+                resolved = str(candidate.resolve())
+        except OSError:
+            resolved = None
         for record in self.list_projects():
             if record.get("id") == identifier or record.get("slug") == target:
                 return record
