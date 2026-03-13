@@ -15,6 +15,11 @@ except ImportError:  # Windows
     pty = None
 
 from .events import emit_event, utc_now
+from .migration import (
+    build_migration_prompt,
+    load_migration_pack,
+    setup_migration_pack,
+)
 from .mcp_server import run_stdio_server
 from .operations import (
     build_context_pack,
@@ -635,6 +640,62 @@ def cmd_work(args: argparse.Namespace) -> int:
     return cmd_skill_run(skill_args)
 
 
+def cmd_migration_setup(args: argparse.Namespace) -> int:
+    workspace = TrailWorkspace.discover()
+    init_workspace(workspace)
+    result = setup_migration_pack(
+        workspace,
+        business_rules=args.business_rules,
+        conventions=args.conventions,
+        gaps=args.gaps,
+        flows=args.flows,
+        skill_name=args.skill_name,
+        agent_name=args.agent,
+    )
+    if args.goal:
+        emit_event(
+            workspace,
+            session_id=_manual_session_id(workspace),
+            kind="goal_set",
+            payload={"goal": args.goal},
+        )
+    if args.next_step:
+        record_next_step(workspace, summary=args.next_step)
+    reduce_state(workspace)
+    build_context_pack(workspace, skill_name=args.skill_name, user_task=args.goal)
+    _print_json(result)
+    return 0
+
+
+def cmd_migration_prompt(args: argparse.Namespace) -> int:
+    workspace = TrailWorkspace.discover()
+    init_workspace(workspace)
+    task = " ".join(args.task).strip() or None
+    print(build_migration_prompt(workspace, user_task=task))
+    return 0
+
+
+def cmd_migration_run(args: argparse.Namespace) -> int:
+    workspace = TrailWorkspace.discover()
+    init_workspace(workspace)
+    task = " ".join(args.task).strip() or None
+    prompt = build_migration_prompt(workspace, user_task=task)
+
+    if args.dry_run:
+        print(prompt)
+        return 0
+
+    state = load_state(workspace)
+    config = load_migration_pack(workspace) or {}
+    run_args = argparse.Namespace(
+        goal=task or state.get("current_goal"),
+        command=["codex", prompt],
+        skill_name=config.get("skill_name"),
+        bootstrap=False,
+    )
+    return cmd_run(run_args)
+
+
 def _agent_prompt(agent: dict, workspace: TrailWorkspace, state: dict, user_task: str | None) -> str:
     lines = [
         f"You are the specialized Trail agent `{agent.get('title')}`.",
@@ -1010,6 +1071,38 @@ def build_parser() -> argparse.ArgumentParser:
     agent_run_parser.add_argument("task", nargs="*")
     agent_run_parser.add_argument("--dry-run", action="store_true")
     agent_run_parser.set_defaults(func=cmd_agent_run)
+
+    migration_parser = subparsers.add_parser("migration", help="Bootstrap and run a migration audit pack")
+    migration_subparsers = migration_parser.add_subparsers(dest="migration_command", required=True)
+
+    migration_setup_parser = migration_subparsers.add_parser(
+        "setup",
+        help="Import migration audit docs, create the migration auditor agent, and store the pack locally",
+    )
+    migration_setup_parser.add_argument("skill_name", nargs="?")
+    migration_setup_parser.add_argument("--business-rules", default="business_rules.md")
+    migration_setup_parser.add_argument("--conventions", default="eui21_ecl21_conventions.md")
+    migration_setup_parser.add_argument("--gaps", default="migration_gaps.md")
+    migration_setup_parser.add_argument("--flows", default="critical_flows.md")
+    migration_setup_parser.add_argument("--agent", default="migration-auditor")
+    migration_setup_parser.add_argument("--goal")
+    migration_setup_parser.add_argument("--next-step")
+    migration_setup_parser.set_defaults(func=cmd_migration_setup)
+
+    migration_prompt_parser = migration_subparsers.add_parser(
+        "prompt",
+        help="Print the migration audit prompt built from the local pack",
+    )
+    migration_prompt_parser.add_argument("task", nargs="*")
+    migration_prompt_parser.set_defaults(func=cmd_migration_prompt)
+
+    migration_run_parser = migration_subparsers.add_parser(
+        "run",
+        help="Open Codex with the migration audit prompt and Trail MCP attached",
+    )
+    migration_run_parser.add_argument("task", nargs="*")
+    migration_run_parser.add_argument("--dry-run", action="store_true")
+    migration_run_parser.set_defaults(func=cmd_migration_run)
 
     mcp_parser = subparsers.add_parser("mcp", help="Run the Trail MCP stdio server")
     mcp_parser.set_defaults(func=cmd_mcp)

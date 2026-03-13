@@ -18,8 +18,8 @@ def reduce_state(workspace: TrailWorkspace) -> dict[str, Any]:
     open_blockers: dict[str, dict[str, Any]] = {}
     decisions: list[dict[str, Any]] = []
     recent_failures: list[dict[str, Any]] = []
-    docs: list[dict[str, Any]] = []
-    specs: list[dict[str, Any]] = []
+    docs: dict[str, dict[str, Any]] = {}
+    specs: dict[str, dict[str, Any]] = {}
     sessions: list[str] = []
     last_command: dict[str, Any] | None = None
     next_step: str | None = None
@@ -81,23 +81,23 @@ def reduce_state(workspace: TrailWorkspace) -> dict[str, Any]:
             if blocker_id:
                 open_blockers.pop(blocker_id, None)
         elif kind == "doc_learned":
-            docs.append(
-                {
-                    "source": payload.get("source"),
-                    "topic": payload.get("topic"),
-                    "facts": payload.get("facts") or [],
-                    "ts": event.get("ts"),
-                }
-            )
+            doc = {
+                "source": payload.get("source"),
+                "topic": payload.get("topic"),
+                "facts": payload.get("facts") or [],
+                "ts": event.get("ts"),
+            }
+            key = f"{doc.get('source')}::{doc.get('topic')}"
+            docs[key] = doc
         elif kind == "spec_learned":
-            specs.append(
-                {
-                    "source": payload.get("source"),
-                    "topic": payload.get("topic"),
-                    "facts": payload.get("facts") or [],
-                    "ts": event.get("ts"),
-                }
-            )
+            spec = {
+                "source": payload.get("source"),
+                "topic": payload.get("topic"),
+                "facts": payload.get("facts") or [],
+                "ts": event.get("ts"),
+            }
+            key = f"{spec.get('source')}::{spec.get('topic')}"
+            specs[key] = spec
         elif kind == "next_step_set":
             next_step = payload.get("summary") or next_step
 
@@ -113,8 +113,8 @@ def reduce_state(workspace: TrailWorkspace) -> dict[str, Any]:
         "open_blockers": list(open_blockers.values()),
         "recent_failures": _trim_items(recent_failures),
         "recent_decisions": _trim_items(decisions),
-        "docs": _trim_items(docs),
-        "specs": _trim_items(specs),
+        "docs": _trim_items(list(docs.values())),
+        "specs": _trim_items(list(specs.values())),
         "event_counts": dict(event_counts),
     }
     workspace.write_json(workspace.current_state_path, state)

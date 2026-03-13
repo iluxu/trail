@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from .events import emit_event, utc_now
+from .migration import load_migration_pack
 from .registry import global_registry, project_record_id, skill_record_id, slugify
 from .reducer import reduce_state
 from .skills import build_skill_briefing, resolve_skill
@@ -142,6 +143,7 @@ def build_context_pack(
         for agent in registry.list_agents():
             if project_record["id"] in (agent.get("linked_projects") or []):
                 linked_agents.append(agent)
+    migration_pack = load_migration_pack(workspace)
     context = {
         "project_id": project_id,
         "project_root": str(workspace.root),
@@ -159,6 +161,7 @@ def build_context_pack(
         "recent_decisions": state.get("recent_decisions") or [],
         "recent_failures": state.get("recent_failures") or [],
         "briefing": briefing,
+        "migration_audit": migration_pack,
     }
     workspace.write_json(workspace.current_context_path, context)
     return context

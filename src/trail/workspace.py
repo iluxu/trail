@@ -59,6 +59,10 @@ class TrailWorkspace:
         return self.trail_dir / "context"
 
     @property
+    def audits_dir(self) -> Path:
+        return self.trail_dir / "audits"
+
+    @property
     def skills_memory_dir(self) -> Path:
         return self.trail_dir / "skills" / "memory"
 
@@ -94,6 +98,7 @@ class TrailWorkspace:
         self.handoffs_dir.mkdir(exist_ok=True)
         self.conversations_dir.mkdir(exist_ok=True)
         self.context_dir.mkdir(exist_ok=True)
+        self.audits_dir.mkdir(exist_ok=True)
         self.skills_memory_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(exist_ok=True)
         self.transcripts_dir.mkdir(exist_ok=True)
