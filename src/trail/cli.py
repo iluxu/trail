@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import uuid
@@ -78,6 +79,15 @@ def _build_run_command(args: argparse.Namespace) -> list[str]:
         if command:
             return command
     return ["codex"]
+
+
+def _resolve_executable(command: list[str]) -> list[str]:
+    if not command:
+        return command
+    resolved = shutil.which(command[0])
+    if not resolved:
+        return command
+    return [resolved, *command[1:]]
 
 
 def _trail_python() -> str:
@@ -183,6 +193,7 @@ def _spawn_with_transcript(command: list[str], transcript_path: Path) -> int:
 
 
 def _spawn_windows(command: list[str], transcript_path: Path) -> int:
+    print(f"Trail launching: {shlex.join(command)}")
     with transcript_path.open("ab") as transcript:
         transcript.write(
             (
@@ -195,8 +206,15 @@ def _spawn_windows(command: list[str], transcript_path: Path) -> int:
         try:
             completed = subprocess.run(command, check=False)
         except FileNotFoundError:
-            transcript.write(f"Command not found: {command[0]}\n".encode("utf-8"))
+            transcript.write(
+                (
+                    f"Command not found: {command[0]}\n"
+                    "Trail could not find `codex` in PATH. Verify that `codex --version` works in this same PowerShell.\n"
+                ).encode("utf-8")
+            )
             transcript.flush()
+            print("Trail could not find `codex` in PATH.")
+            print(f"Transcript: {transcript_path}")
             return 127
         transcript.write(f"\nProcess exited with code {completed.returncode}\n".encode("utf-8"))
         transcript.flush()
@@ -216,7 +234,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     if skill_name:
         skill_record = registry.upsert_skill(skill_name)
         skill_record, project_record = registry.link_skill_project(skill_name, project_record["slug"])
-    command = _build_run_command(args)
+    command = _resolve_executable(_build_run_command(args))
     command = _attach_trail_mcp(
         command,
         workspace,
@@ -323,6 +341,9 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     reduce_state(workspace)
     build_context_pack(workspace, skill_name=skill_name, user_task=args.goal)
+    if exit_code != 0:
+        print(f"Trail run exited with code {exit_code}.")
+        print(f"Transcript: {transcript_path}")
     return exit_code
 
 
