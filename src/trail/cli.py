@@ -555,6 +555,86 @@ def cmd_project_link_skill(args: argparse.Namespace) -> int:
     return 0
 
 
+def _default_agent_slug_for_skill(skill_name: str) -> str:
+    return f"{skill_name}-lead"
+
+
+def _bootstrap_project_skill_agent(
+    workspace: TrailWorkspace,
+    *,
+    skill_name: str,
+    agent_name: str | None = None,
+) -> dict:
+    registry = global_registry()
+    project = registry.upsert_project(workspace.root)
+    skill = registry.upsert_skill(skill_name)
+    skill, project = registry.link_skill_project(skill_name, project["slug"])
+
+    chosen_agent_name = agent_name or _default_agent_slug_for_skill(skill_name)
+    agent = registry.upsert_agent(
+        name=chosen_agent_name,
+        role="lead",
+        description=f"Specialist agent for {skill_name} on {project['slug']}",
+        system_prompt=(
+            f"Operate as the lead specialist for skill {skill_name}. "
+            "Be strong on exact project state, blockers, delivery risk, next steps, and knowledge recall. "
+            "Use Trail before making assumptions."
+        ),
+    )
+    agent = registry.link_agent(agent["slug"], project_identifier=project["slug"], skill_identifier=skill["slug"])
+
+    return {"project": project, "skill": skill, "agent": agent}
+
+
+def cmd_attach(args: argparse.Namespace) -> int:
+    workspace = TrailWorkspace.discover()
+    init_workspace(workspace)
+    records = _bootstrap_project_skill_agent(workspace, skill_name=args.skill_name, agent_name=args.agent)
+    if args.goal:
+        emit_event(
+            workspace,
+            session_id=_manual_session_id(workspace),
+            kind="goal_set",
+            payload={"goal": args.goal},
+        )
+    if args.next_step:
+        record_next_step(workspace, summary=args.next_step)
+    reduce_state(workspace)
+    build_context_pack(workspace, skill_name=args.skill_name, user_task=args.goal)
+    _print_json(records)
+    return 0
+
+
+def cmd_work(args: argparse.Namespace) -> int:
+    workspace = TrailWorkspace.discover()
+    init_workspace(workspace)
+    records = _bootstrap_project_skill_agent(workspace, skill_name=args.skill_name, agent_name=args.agent)
+    task = " ".join(args.task).strip() or None
+
+    # If an agent is requested, prefer the agent prompt. Otherwise use the skill prompt.
+    if args.use_agent:
+        agent = records["agent"]
+        state = load_state(workspace)
+        prompt = _agent_prompt(agent, workspace, state, task)
+        if args.dry_run:
+            print(prompt)
+            return 0
+        run_args = argparse.Namespace(
+            goal=task or state.get("current_goal"),
+            command=["codex", prompt],
+            skill_name=args.skill_name,
+            bootstrap=False,
+        )
+        return cmd_run(run_args)
+
+    skill_args = argparse.Namespace(
+        skill_name=args.skill_name,
+        task=args.task,
+        dry_run=args.dry_run,
+    )
+    return cmd_skill_run(skill_args)
+
+
 def _agent_prompt(agent: dict, workspace: TrailWorkspace, state: dict, user_task: str | None) -> str:
     lines = [
         f"You are the specialized Trail agent `{agent.get('title')}`.",
@@ -760,6 +840,21 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser = subparsers.add_parser("init", help="Initialize .trail in the current repo")
     init_parser.add_argument("path", nargs="?", help="Optional directory to initialize")
     init_parser.set_defaults(func=cmd_init)
+
+    attach_parser = subparsers.add_parser("attach", help="Bootstrap the current repo with a skill and default specialist agent")
+    attach_parser.add_argument("skill_name")
+    attach_parser.add_argument("--agent", help="Optional agent name; defaults to <skill>-lead")
+    attach_parser.add_argument("--goal")
+    attach_parser.add_argument("--next-step")
+    attach_parser.set_defaults(func=cmd_attach)
+
+    work_parser = subparsers.add_parser("work", help="Open Codex with Trail already attached for a skill")
+    work_parser.add_argument("skill_name")
+    work_parser.add_argument("task", nargs="*")
+    work_parser.add_argument("--agent", help="Optional agent name; defaults to <skill>-lead")
+    work_parser.add_argument("--use-agent", action="store_true", help="Use the specialist agent prompt instead of the raw skill prompt")
+    work_parser.add_argument("--dry-run", action="store_true")
+    work_parser.set_defaults(func=cmd_work)
 
     run_parser = subparsers.add_parser("run", help="Wrap an interactive Codex command")
     run_parser.add_argument("--goal", help="Record the current working goal")

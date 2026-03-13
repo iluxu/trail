@@ -8,6 +8,8 @@ Trail is a Codex-first wrapper that watches work, records structured events, reb
 
 - `trail init` creates `.trail/`
 - `~/.trail/` stores the global Trail library for skills, projects, and conversations
+- `trail attach <skill>` bootstraps the current project with a linked skill and default specialist agent
+- `trail work <skill> "task"` opens Codex with Trail already attached and contextualized
 - `trail` with no arguments launches `codex`
 - `trail run` wraps an interactive command, defaulting to `codex`
 - `trail mcp` exposes Trail as a local MCP server
@@ -26,23 +28,9 @@ Trail is a Codex-first wrapper that watches work, records structured events, reb
 
 ```bash
 trail init
-trail project init
-trail skill add rag-docs-api
-trail skill link rag-docs-api trail
-trail convo save
-trail convo list --project trail
-trail agent add backend-architect --role architect --description "Backend specialist"
-trail agent link backend-architect --project trail --skill rag-docs-api
-trail agent run backend-architect --dry-run "Prepare a manager-ready status update"
-trail note goal "Ship Trail MVP"
-trail note decision "Use JSONL" --reason "Append-only and simple"
-trail
-trail run -- codex mcp list
-trail mcp
-trail skill run rag-docs-api --dry-run "Check the RAG API readiness flow"
-trail project show
-trail status --manager
-trail handoff --label "end-of-day"
+trail attach rag-docs-api --goal "Ship Trail MVP" --next-step "Create the first two real project conversations"
+trail work rag-docs-api "Check the RAG API readiness flow"
+trail work rag-docs-api --use-agent "Prepare a manager-ready status update"
 ```
 
 ## Next
