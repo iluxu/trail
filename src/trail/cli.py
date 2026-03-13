@@ -131,7 +131,10 @@ def _codex_bootstrap_prompt() -> str:
 
 
 def _is_codex_command(command: list[str]) -> bool:
-    return bool(command) and Path(command[0]).name == "codex"
+    if not command:
+        return False
+    candidate = Path(command[0])
+    return candidate.stem.lower() == "codex" or candidate.name.lower() == "codex"
 
 
 def _attach_trail_mcp(
