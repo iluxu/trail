@@ -7,6 +7,7 @@ from typing import Any
 
 from .events import emit_event, utc_now
 from .registry import global_registry
+from .skills import resolve_skill
 from .workspace import TrailWorkspace
 
 
@@ -36,13 +37,79 @@ def load_migration_pack(workspace: TrailWorkspace) -> dict[str, Any] | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _resolve_source(path_value: str, *, base_dir: Path) -> Path:
+def _candidate_roots(workspace: TrailWorkspace, skill_name: str | None) -> list[Path]:
+    roots: list[Path] = []
+
+    def add(path: Path | None) -> None:
+        if not path:
+            return
+        try:
+            resolved = path.resolve()
+        except OSError:
+            return
+        if resolved not in roots:
+            roots.append(resolved)
+
+    add(Path.cwd())
+    add(workspace.root)
+    add(workspace.trail_dir)
+    add(Path.home() / ".codex" / "skills")
+    add(workspace.root / ".codex" / "skills")
+
+    if skill_name:
+        try:
+            skill = resolve_skill(skill_name)
+        except FileNotFoundError:
+            skill = None
+        if skill:
+            add(skill.path.parent)
+            add(skill.path.parent / "references")
+        add(Path.cwd() / skill_name)
+        add(Path.cwd() / "references")
+        add(workspace.root / skill_name)
+        add(workspace.root / "references")
+        add(workspace.root / ".codex" / "skills" / skill_name)
+        add(workspace.root / ".codex" / "skills" / skill_name / "references")
+        add(Path.home() / ".codex" / "skills" / skill_name)
+        add(Path.home() / ".codex" / "skills" / skill_name / "references")
+
+    return roots
+
+
+def _search_by_name(path_value: str, *, roots: list[Path]) -> Path | None:
+    target_name = Path(path_value).name
+    matches: list[Path] = []
+    for root in roots:
+        if not root.exists():
+            continue
+        for match in root.rglob(target_name):
+            if match.is_file():
+                matches.append(match.resolve())
+    if not matches:
+        return None
+    matches.sort(key=lambda path: (len(path.parts), str(path)))
+    return matches[0]
+
+
+def _resolve_source(path_value: str, *, workspace: TrailWorkspace, skill_name: str | None) -> Path:
     candidate = Path(path_value).expanduser()
+    roots = _candidate_roots(workspace, skill_name)
+
+    if candidate.is_absolute() and candidate.exists():
+        return candidate.resolve()
+
     if not candidate.is_absolute():
-        candidate = (base_dir / candidate).resolve()
-    if not candidate.exists():
-        raise FileNotFoundError(f"Migration source not found: {path_value}")
-    return candidate
+        for root in roots:
+            direct = (root / candidate).resolve()
+            if direct.exists() and direct.is_file():
+                return direct
+
+    found = _search_by_name(path_value, roots=roots)
+    if found:
+        return found
+
+    searched = ", ".join(str(root) for root in roots[:8])
+    raise FileNotFoundError(f"Migration source not found: {path_value}. Searched under: {searched}")
 
 
 def _extract_heading(line: str) -> str | None:
@@ -183,7 +250,7 @@ def setup_migration_pack(
     knowledge_entries: list[dict[str, Any]] = []
     categories: list[dict[str, Any]] = []
     for slug, title, raw_path, event_kind in sources:
-        resolved = _resolve_source(raw_path, base_dir=Path.cwd())
+        resolved = _resolve_source(raw_path, workspace=workspace, skill_name=skill_name)
         items = extract_markdown_items(resolved)
         facts = _dedupe_facts(items)
         emit_event(
