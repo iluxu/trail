@@ -12,7 +12,7 @@ Trail is a Codex-first wrapper that watches work, records structured events, reb
 - `trail work <skill> "task"` opens Codex with Trail already attached and contextualized
 - `trail migration setup [skill]` turns 4 migration markdown sources into a reusable local audit pack
 - `trail migration run "task"` opens Codex as a migration auditor with Trail MCP attached
-- `trail` with no arguments launches `codex`
+- `trail` with no arguments launches `codex`, attaches Trail MCP, and tells Codex to start by calling `trail_get_startup_brief`
 - `trail run` wraps an interactive command, defaulting to `codex`
 - `trail mcp` exposes Trail as a local MCP server
 - `.trail/events.jsonl` is the source of truth
@@ -35,6 +35,7 @@ trail work rag-docs-api "Check the RAG API readiness flow"
 trail work rag-docs-api --use-agent "Prepare a manager-ready status update"
 trail migration setup eui21 --goal "Audit migrated project parity" --next-step "Validate step 2 and shell parity"
 trail migration run "Check whether the migrated project preserves the old business rules"
+trail
 ```
 
 ## Next

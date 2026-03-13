@@ -15,6 +15,7 @@ except ImportError:  # Windows
     pty = None
 
 from .events import emit_event, utc_now
+from .defaults import active_agent_name, active_mode, active_skill_name, save_defaults
 from .migration import (
     build_migration_prompt,
     load_migration_pack,
@@ -99,11 +100,23 @@ def _trail_mcp_env(workspace: TrailWorkspace, *, conversation_id: str, skill_nam
 
 
 def _codex_bootstrap_prompt() -> str:
+    workspace = TrailWorkspace.discover()
+    skill_name = active_skill_name(workspace)
+    agent_name = active_agent_name(workspace)
+    mode = active_mode(workspace)
     lines = [
         "Trail is attached as your project memory layer.",
-        "Use it instead of relying on memory alone.",
-        *trail_usage_guidance()[1:],
+        "Do not rely on memory alone in this session.",
+        "Before you inspect files or answer the user, call `trail_get_startup_brief`.",
+        "Then execute its recommended Trail calls in order.",
     ]
+    if skill_name:
+        lines.append(f"Active Trail skill: `{skill_name}`.")
+    if agent_name:
+        lines.append(f"Active Trail agent: `{agent_name}`.")
+    if mode:
+        lines.append(f"Active Trail mode: `{mode}`.")
+    lines.extend(trail_usage_guidance()[1:])
     return "\n".join(lines)
 
 
@@ -587,6 +600,12 @@ def _bootstrap_project_skill_agent(
         ),
     )
     agent = registry.link_agent(agent["slug"], project_identifier=project["slug"], skill_identifier=skill["slug"])
+    save_defaults(
+        workspace,
+        active_skill=skill["slug"],
+        active_agent=agent["slug"],
+        mode="skill",
+    )
 
     return {"project": project, "skill": skill, "agent": agent}
 
@@ -661,6 +680,12 @@ def cmd_migration_setup(args: argparse.Namespace) -> int:
         )
     if args.next_step:
         record_next_step(workspace, summary=args.next_step)
+    save_defaults(
+        workspace,
+        active_skill=args.skill_name,
+        active_agent=args.agent,
+        mode="migration_audit",
+    )
     reduce_state(workspace)
     build_context_pack(workspace, skill_name=args.skill_name, user_task=args.goal)
     _print_json(result)
@@ -1115,7 +1140,15 @@ def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
     if not argv:
-        return cmd_run(argparse.Namespace(goal=None, command=["codex"], skill_name=None, bootstrap=True))
+        workspace = TrailWorkspace.discover()
+        return cmd_run(
+            argparse.Namespace(
+                goal=None,
+                command=["codex"],
+                skill_name=active_skill_name(workspace),
+                bootstrap=True,
+            )
+        )
     args = parser.parse_args(argv)
     return args.func(args)
 

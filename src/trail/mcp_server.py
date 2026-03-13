@@ -7,6 +7,7 @@ from typing import Any
 
 from .operations import (
     build_context_pack,
+    build_startup_brief,
     create_handoff,
     get_registered_conversation,
     list_project_conversations,
@@ -32,6 +33,11 @@ def _jsonrpc_error(code: int, message: str, req_id: Any) -> dict[str, Any]:
 
 def _tool_definitions() -> list[dict[str, Any]]:
     return [
+        {
+            "name": "trail_get_startup_brief",
+            "description": "Call this immediately at session start when Codex was launched by Trail. It returns the active skill, agent, migration pack, and the next Trail calls to make.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
         {
             "name": "trail_get_current_context",
             "description": "Return the current Trail context pack for this project/session. Call this before making project-state assumptions.",
@@ -145,6 +151,9 @@ def _env_skill_slug() -> str | None:
 
 
 def _call_tool(workspace: TrailWorkspace, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    if name == "trail_get_startup_brief":
+        return build_startup_brief(workspace)
+
     if name == "trail_get_current_context":
         return build_context_pack(workspace)
 

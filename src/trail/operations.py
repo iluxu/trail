@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from .defaults import active_agent_name, active_mode, active_skill_name
 from .events import emit_event, utc_now
 from .migration import load_migration_pack
 from .registry import global_registry, project_record_id, skill_record_id, slugify
@@ -165,6 +166,51 @@ def build_context_pack(
     }
     workspace.write_json(workspace.current_context_path, context)
     return context
+
+
+def build_startup_brief(workspace: TrailWorkspace) -> dict[str, Any]:
+    skill_name = active_skill_name(workspace)
+    context = build_context_pack(workspace, skill_name=skill_name)
+    migration_pack = load_migration_pack(workspace)
+    recommended_calls = [
+        {
+            "tool": "trail_get_current_context",
+            "arguments": {},
+            "why": "Load the current project state before making assumptions.",
+        }
+    ]
+    if skill_name:
+        recommended_calls.append(
+            {
+                "tool": "trail_get_skill_context",
+                "arguments": {"skill": skill_name},
+                "why": "Load the active skill overlay and project-specific guidance.",
+            }
+        )
+    if migration_pack:
+        recommended_calls.append(
+            {
+                "tool": "trail_search_knowledge",
+                "arguments": {"query": "business rules migration gaps critical flows EUI21 ECL21", "limit": 8},
+                "why": "Load the migration audit pack before judging parity.",
+            }
+        )
+    recommended_calls.append(
+        {
+            "tool": "trail_list_project_conversations",
+            "arguments": {"limit": 5},
+            "why": "Review recent project history if prior work may matter.",
+        }
+    )
+    return {
+        "project_root": str(workspace.root),
+        "active_skill": skill_name,
+        "active_agent": active_agent_name(workspace),
+        "active_mode": active_mode(workspace),
+        "migration_audit": migration_pack,
+        "recommended_calls": recommended_calls,
+        "context": context,
+    }
 
 
 def record_decision(

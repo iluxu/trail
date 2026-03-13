@@ -90,6 +90,10 @@ class TrailWorkspace:
     def current_context_path(self) -> Path:
         return self.context_dir / "current.json"
 
+    @property
+    def defaults_path(self) -> Path:
+        return self.context_dir / "defaults.json"
+
     def ensure(self) -> None:
         self.trail_dir.mkdir(exist_ok=True)
         self.sessions_dir.mkdir(exist_ok=True)
