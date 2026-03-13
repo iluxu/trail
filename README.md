@@ -13,6 +13,9 @@ Trail is a Codex-first wrapper that watches work, records structured events, reb
 - `trail migration setup [skill]` turns 4 migration markdown sources into a reusable local audit pack
 - `trail migration run "task"` opens Codex as a migration auditor with Trail MCP attached
 - `trail` with no arguments launches `codex`, attaches Trail MCP, and tells Codex to start by calling `trail_get_startup_brief`
+- `trail overlay ...` manages the local dynamic skill overlay in `.trail/skills/overlays/`
+- `trail pack ...` manages local project packs in `.trail/packs/`
+- `trail report manager` generates a manager-ready project report
 - `trail run` wraps an interactive command, defaulting to `codex`
 - `trail mcp` exposes Trail as a local MCP server
 - `.trail/events.jsonl` is the source of truth
@@ -35,6 +38,9 @@ trail work rag-docs-api "Check the RAG API readiness flow"
 trail work rag-docs-api --use-agent "Prepare a manager-ready status update"
 trail migration setup eui21 --goal "Audit migrated project parity" --next-step "Validate step 2 and shell parity"
 trail migration run "Check whether the migrated project preserves the old business rules"
+trail overlay update eui21 --project-summary "Migration project" --directive "Use repo-proven EUI21 patterns"
+trail pack import delivery-rules --file references/delivery.md --activate
+trail report manager
 trail
 ```
 
@@ -51,4 +57,5 @@ trail
 - [TRAIL_V0.2.md](./TRAIL_V0.2.md): Trail as the reference layer for skills, conversations, context, and sync
 - [TRAIL_MCP_V0.1.md](./TRAIL_MCP_V0.1.md): How Codex should call Trail during a live session through MCP
 - [TRAIL_SKILL_USAGE_V0.1.md](./TRAIL_SKILL_USAGE_V0.1.md): Standard Trail orchestration rules for runtime bootstrap and skill briefings
+- [TRAIL_PRODUCT_V1.md](./TRAIL_PRODUCT_V1.md): Product vision, modes, killer features, and build order
 - [WINDOWS_LOCAL_TEST.md](./WINDOWS_LOCAL_TEST.md): Native Windows install and first real local project test

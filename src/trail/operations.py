@@ -3,9 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .defaults import active_agent_name, active_mode, active_skill_name
+from .defaults import active_agent_name, active_mode, active_packs, active_skill_name
 from .events import emit_event, utc_now
 from .migration import load_migration_pack
+from .overlay import build_skill_overlay
+from .packs import list_packs, load_pack
 from .registry import global_registry, project_record_id, skill_record_id, slugify
 from .reducer import reduce_state
 from .skills import build_skill_briefing, resolve_skill
@@ -123,6 +125,8 @@ def build_context_pack(
     skill = resolve_skill(skill_name) if skill_name else None
     skill_record = registry.get_skill(skill.name) if skill else None
     briefing = build_skill_briefing(workspace, skill, state, user_task) if skill else None
+    overlay = build_skill_overlay(workspace, skill.name, state=state) if skill else None
+    pack_records = [pack for slug in active_packs(workspace) if (pack := load_pack(workspace, slug))]
     project_id = project_record["id"] if project_record else project_record_id(slugify(workspace.root.name))
     skill_id = skill_record["id"] if skill_record else (skill_record_id(slugify(skill.name)) if skill else None)
     linked_conversation_ids: list[str] = []
@@ -162,6 +166,8 @@ def build_context_pack(
         "recent_decisions": state.get("recent_decisions") or [],
         "recent_failures": state.get("recent_failures") or [],
         "briefing": briefing,
+        "skill_overlay": overlay,
+        "active_packs": pack_records,
         "migration_audit": migration_pack,
     }
     workspace.write_json(workspace.current_context_path, context)
@@ -195,6 +201,14 @@ def build_startup_brief(workspace: TrailWorkspace) -> dict[str, Any]:
                 "why": "Load the migration audit pack before judging parity.",
             }
         )
+    if active_packs(workspace):
+        recommended_calls.append(
+            {
+                "tool": "trail_list_packs",
+                "arguments": {},
+                "why": "Load active project packs that shape the current skill and agent behavior.",
+            }
+        )
     recommended_calls.append(
         {
             "tool": "trail_list_project_conversations",
@@ -207,6 +221,7 @@ def build_startup_brief(workspace: TrailWorkspace) -> dict[str, Any]:
         "active_skill": skill_name,
         "active_agent": active_agent_name(workspace),
         "active_mode": active_mode(workspace),
+        "active_packs": [pack.get("slug") for pack in list_packs(workspace) if pack.get("slug") in active_packs(workspace)],
         "migration_audit": migration_pack,
         "recommended_calls": recommended_calls,
         "context": context,

@@ -16,13 +16,14 @@ except ImportError:  # Windows
     pty = None
 
 from .events import emit_event, utc_now
-from .defaults import active_agent_name, active_mode, active_skill_name, save_defaults
+from .defaults import active_agent_name, active_mode, active_packs, active_skill_name, save_defaults
 from .migration import (
     build_migration_prompt,
     load_migration_pack,
     setup_migration_pack,
 )
 from .mcp_server import run_stdio_server
+from .overlay import load_skill_overlay, save_skill_overlay
 from .operations import (
     build_context_pack,
     create_handoff,
@@ -36,8 +37,10 @@ from .operations import (
     record_next_step,
     sync_conversation_to_registry,
 )
+from .packs import activate_pack, import_pack_from_files, list_packs, load_pack
 from .registry import global_registry
 from .reducer import reduce_state
+from .reporting import build_manager_report, render_manager_report
 from .skills import build_skill_briefing, resolve_skill, trail_usage_guidance
 from .workspace import TrailWorkspace
 
@@ -601,6 +604,22 @@ def _default_agent_slug_for_skill(skill_name: str) -> str:
     return f"{skill_name}-lead"
 
 
+def _ensure_manager_reporter_agent(workspace: TrailWorkspace, *, project_slug: str, skill_slug: str | None) -> dict:
+    registry = global_registry()
+    agent = registry.upsert_agent(
+        name="manager-reporter",
+        role="reporter",
+        description="Specialist agent for manager-ready status, risks, progress, and next steps",
+        system_prompt=(
+            "Produce concise, manager-ready project updates. "
+            "Be explicit about done, in progress, risks, confidence, and next actions. "
+            "Use Trail as the source of truth before summarizing."
+        ),
+    )
+    agent = registry.link_agent(agent["slug"], project_identifier=project_slug, skill_identifier=skill_slug)
+    return agent
+
+
 def _bootstrap_project_skill_agent(
     workspace: TrailWorkspace,
     *,
@@ -624,6 +643,7 @@ def _bootstrap_project_skill_agent(
         ),
     )
     agent = registry.link_agent(agent["slug"], project_identifier=project["slug"], skill_identifier=skill["slug"])
+    _ensure_manager_reporter_agent(workspace, project_slug=project["slug"], skill_slug=skill["slug"])
     save_defaults(
         workspace,
         active_skill=skill["slug"],
@@ -704,11 +724,18 @@ def cmd_migration_setup(args: argparse.Namespace) -> int:
         )
     if args.next_step:
         record_next_step(workspace, summary=args.next_step)
+    if result.get("project"):
+        _ensure_manager_reporter_agent(
+            workspace,
+            project_slug=result["project"]["slug"],
+            skill_slug=(result.get("skill") or {}).get("slug"),
+        )
     save_defaults(
         workspace,
         active_skill=args.skill_name,
         active_agent=args.agent,
         mode="migration_audit",
+        active_packs=sorted({*active_packs(workspace), "migration-audit"}),
     )
     reduce_state(workspace)
     build_context_pack(workspace, skill_name=args.skill_name, user_task=args.goal)
@@ -745,7 +772,95 @@ def cmd_migration_run(args: argparse.Namespace) -> int:
     return cmd_run(run_args)
 
 
+def cmd_overlay_show(args: argparse.Namespace) -> int:
+    workspace = TrailWorkspace.discover()
+    init_workspace(workspace)
+    skill_name = args.skill_name or active_skill_name(workspace)
+    if not skill_name:
+        raise SystemExit("No skill specified and no active skill found.")
+    _print_json(load_skill_overlay(workspace, skill_name))
+    return 0
+
+
+def cmd_overlay_update(args: argparse.Namespace) -> int:
+    workspace = TrailWorkspace.discover()
+    init_workspace(workspace)
+    skill_name = args.skill_name or active_skill_name(workspace)
+    if not skill_name:
+        raise SystemExit("No skill specified and no active skill found.")
+    record = save_skill_overlay(
+        workspace,
+        skill_name=skill_name,
+        project_summary=args.project_summary,
+        current_focus=args.current_focus,
+        directives=args.directive,
+        avoid=args.avoid,
+        pack_slugs=args.pack,
+    )
+    _print_json(record)
+    return 0
+
+
+def cmd_pack_list(args: argparse.Namespace) -> int:
+    workspace = TrailWorkspace.discover()
+    init_workspace(workspace)
+    _print_json({"items": list_packs(workspace), "active": active_packs(workspace)})
+    return 0
+
+
+def cmd_pack_show(args: argparse.Namespace) -> int:
+    workspace = TrailWorkspace.discover()
+    init_workspace(workspace)
+    record = load_pack(workspace, args.slug)
+    if not record:
+        raise SystemExit(f"Pack not found: {args.slug}")
+    _print_json(record)
+    return 0
+
+
+def cmd_pack_import(args: argparse.Namespace) -> int:
+    workspace = TrailWorkspace.discover()
+    init_workspace(workspace)
+    record = import_pack_from_files(
+        workspace,
+        slug=args.slug,
+        title=args.title or args.slug,
+        kind=args.kind,
+        files=args.file,
+        summary=args.summary,
+        activate=args.activate,
+    )
+    _print_json(record)
+    return 0
+
+
+def cmd_pack_activate(args: argparse.Namespace) -> int:
+    workspace = TrailWorkspace.discover()
+    init_workspace(workspace)
+    if not load_pack(workspace, args.slug):
+        raise SystemExit(f"Pack not found: {args.slug}")
+    _print_json({"active_packs": activate_pack(workspace, args.slug)})
+    return 0
+
+
+def cmd_report_manager(args: argparse.Namespace) -> int:
+    workspace = TrailWorkspace.discover()
+    init_workspace(workspace)
+    report = build_manager_report(workspace)
+    if args.json:
+        _print_json(report)
+    else:
+        print(render_manager_report(report))
+    return 0
+
+
 def _agent_prompt(agent: dict, workspace: TrailWorkspace, state: dict, user_task: str | None) -> str:
+    skill_slug = None
+    linked_skills = agent.get("linked_skills") or []
+    if linked_skills:
+        skill_slug = linked_skills[0].replace("skill_", "").replace("_", "-")
+    overlay = load_skill_overlay(workspace, skill_slug) if skill_slug else None
+    packs = [pack for slug in active_packs(workspace) if (pack := load_pack(workspace, slug))]
     lines = [
         f"You are the specialized Trail agent `{agent.get('title')}`.",
         f"Role: {agent.get('role') or 'specialist'}",
@@ -764,6 +879,18 @@ def _agent_prompt(agent: dict, workspace: TrailWorkspace, state: dict, user_task
             f"- Linked conversations: {', '.join(agent.get('linked_conversations') or []) or 'none'}",
         ]
     )
+    if overlay and overlay.get("project_summary"):
+        lines.append(f"- Skill overlay summary: {overlay['project_summary']}")
+    if overlay and overlay.get("current_focus"):
+        lines.append(f"- Skill overlay focus: {overlay['current_focus']}")
+    if overlay and overlay.get("directives"):
+        lines.append("- Skill overlay directives:")
+        for item in overlay["directives"][:6]:
+            lines.append(f"  - {item}")
+    if packs:
+        lines.append("- Active packs:")
+        for pack in packs[:6]:
+            lines.append(f"  - {pack.get('title')} ({pack.get('kind')}): {pack.get('summary')}")
     if agent.get("system_prompt"):
         lines.extend(["", "Agent instructions:", agent["system_prompt"]])
     lines.extend(
@@ -1051,6 +1178,22 @@ def build_parser() -> argparse.ArgumentParser:
     skill_link_parser.add_argument("project")
     skill_link_parser.set_defaults(func=cmd_skill_link)
 
+    overlay_parser = subparsers.add_parser("overlay", help="Manage local dynamic skill overlays")
+    overlay_subparsers = overlay_parser.add_subparsers(dest="overlay_command", required=True)
+
+    overlay_show_parser = overlay_subparsers.add_parser("show", help="Show the local overlay for a skill")
+    overlay_show_parser.add_argument("skill_name", nargs="?")
+    overlay_show_parser.set_defaults(func=cmd_overlay_show)
+
+    overlay_update_parser = overlay_subparsers.add_parser("update", help="Update the local overlay for a skill")
+    overlay_update_parser.add_argument("skill_name", nargs="?")
+    overlay_update_parser.add_argument("--project-summary")
+    overlay_update_parser.add_argument("--current-focus")
+    overlay_update_parser.add_argument("--directive", action="append")
+    overlay_update_parser.add_argument("--avoid", action="append")
+    overlay_update_parser.add_argument("--pack", action="append")
+    overlay_update_parser.set_defaults(func=cmd_overlay_update)
+
     project_parser = subparsers.add_parser("project", help="Manage Trail project records")
     project_subparsers = project_parser.add_subparsers(dest="project_command", required=True)
 
@@ -1090,6 +1233,29 @@ def build_parser() -> argparse.ArgumentParser:
     convo_fetch_parser = convo_subparsers.add_parser("fetch", help="Fetch a global Trail conversation into the local repo workspace")
     convo_fetch_parser.add_argument("conversation")
     convo_fetch_parser.set_defaults(func=cmd_convo_fetch)
+
+    pack_parser = subparsers.add_parser("pack", help="Manage local project packs")
+    pack_subparsers = pack_parser.add_subparsers(dest="pack_command", required=True)
+
+    pack_list_parser = pack_subparsers.add_parser("list", help="List local packs")
+    pack_list_parser.set_defaults(func=cmd_pack_list)
+
+    pack_show_parser = pack_subparsers.add_parser("show", help="Show one local pack")
+    pack_show_parser.add_argument("slug")
+    pack_show_parser.set_defaults(func=cmd_pack_show)
+
+    pack_import_parser = pack_subparsers.add_parser("import", help="Import a local pack from markdown files")
+    pack_import_parser.add_argument("slug")
+    pack_import_parser.add_argument("--title")
+    pack_import_parser.add_argument("--kind", default="knowledge")
+    pack_import_parser.add_argument("--summary")
+    pack_import_parser.add_argument("--file", action="append", required=True)
+    pack_import_parser.add_argument("--activate", action="store_true")
+    pack_import_parser.set_defaults(func=cmd_pack_import)
+
+    pack_activate_parser = pack_subparsers.add_parser("activate", help="Activate an existing local pack")
+    pack_activate_parser.add_argument("slug")
+    pack_activate_parser.set_defaults(func=cmd_pack_activate)
 
     agent_parser = subparsers.add_parser("agent", help="Manage Trail specialist agents")
     agent_subparsers = agent_parser.add_subparsers(dest="agent_command", required=True)
@@ -1152,6 +1318,13 @@ def build_parser() -> argparse.ArgumentParser:
     migration_run_parser.add_argument("task", nargs="*")
     migration_run_parser.add_argument("--dry-run", action="store_true")
     migration_run_parser.set_defaults(func=cmd_migration_run)
+
+    report_parser = subparsers.add_parser("report", help="Generate project reports from Trail state")
+    report_subparsers = report_parser.add_subparsers(dest="report_command", required=True)
+
+    report_manager_parser = report_subparsers.add_parser("manager", help="Generate a manager-ready status report")
+    report_manager_parser.add_argument("--json", action="store_true")
+    report_manager_parser.set_defaults(func=cmd_report_manager)
 
     mcp_parser = subparsers.add_parser("mcp", help="Run the Trail MCP stdio server")
     mcp_parser.set_defaults(func=cmd_mcp)

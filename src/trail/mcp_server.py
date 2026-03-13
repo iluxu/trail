@@ -17,6 +17,9 @@ from .operations import (
     record_next_step,
     search_knowledge,
 )
+from .overlay import build_skill_overlay
+from .packs import list_packs, load_pack
+from .reporting import build_manager_report
 from .workspace import TrailWorkspace
 
 
@@ -51,6 +54,25 @@ def _tool_definitions() -> list[dict[str, Any]]:
                 "properties": {"skill": {"type": "string", "description": "Skill slug, e.g. rag-docs-api"}},
                 "required": [],
             },
+        },
+        {
+            "name": "trail_get_skill_overlay",
+            "description": "Return the dynamic local overlay for a skill. Call this when project-specific conventions or active packs may matter.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"skill": {"type": "string", "description": "Optional skill slug"}},
+                "required": [],
+            },
+        },
+        {
+            "name": "trail_list_packs",
+            "description": "List active local project packs. Call this when Trail may have imported audit, domain, or project packs shaping the current task.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "trail_get_manager_report",
+            "description": "Return a manager-ready project report built from Trail state. Call this when the user asks for status, risks, progress, or next steps.",
+            "inputSchema": {"type": "object", "properties": {}},
         },
         {
             "name": "trail_search_knowledge",
@@ -171,6 +193,18 @@ def _call_tool(workspace: TrailWorkspace, name: str, arguments: dict[str, Any]) 
             "recent_decisions": context.get("recent_decisions"),
             "recent_failures": context.get("recent_failures"),
         }
+
+    if name == "trail_get_skill_overlay":
+        skill_name = arguments.get("skill") or _env_skill_slug()
+        if not skill_name:
+            raise ValueError("trail_get_skill_overlay requires a skill argument or TRAIL_SKILL_SLUG")
+        return {"overlay": build_skill_overlay(workspace, skill_name, state=load_state(workspace))}
+
+    if name == "trail_list_packs":
+        return {"items": list_packs(workspace)}
+
+    if name == "trail_get_manager_report":
+        return {"report": build_manager_report(workspace)}
 
     if name == "trail_search_knowledge":
         query = arguments.get("query")

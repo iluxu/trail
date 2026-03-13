@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from .overlay import build_skill_overlay
 from .workspace import TrailWorkspace
 
 
@@ -87,6 +88,7 @@ def build_skill_briefing(workspace: TrailWorkspace, skill: Skill, state: dict, u
     docs = state.get("docs") or []
     specs = state.get("specs") or []
     support_files = collect_skill_support_files(skill)
+    overlay = build_skill_overlay(workspace, skill.name, state=state)
 
     lines = [
         f"You are operating with the Codex skill `{skill.name}`.",
@@ -99,6 +101,26 @@ def build_skill_briefing(workspace: TrailWorkspace, skill: Skill, state: dict, u
         f"- Recent failures: {len(failures)}",
         f"- Skill file: {skill.path}",
     ]
+
+    if overlay.get("project_summary"):
+        lines.append(f"- Project summary: {overlay['project_summary']}")
+    if overlay.get("current_focus"):
+        lines.append(f"- Current focus: {overlay['current_focus']}")
+
+    if overlay.get("directives"):
+        lines.append("- Dynamic directives:")
+        for item in overlay["directives"][:8]:
+            lines.append(f"  - {item}")
+
+    if overlay.get("avoid"):
+        lines.append("- Do not repeat:")
+        for item in overlay["avoid"][:6]:
+            lines.append(f"  - {item}")
+
+    if overlay.get("packs"):
+        lines.append("- Active packs:")
+        for pack in overlay["packs"][:6]:
+            lines.append(f"  - {pack.get('title')} ({pack.get('kind')}): {pack.get('summary')}")
 
     if decisions:
         lines.append("- Recent decisions:")

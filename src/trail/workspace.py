@@ -67,6 +67,18 @@ class TrailWorkspace:
         return self.trail_dir / "skills" / "memory"
 
     @property
+    def skills_overlays_dir(self) -> Path:
+        return self.trail_dir / "skills" / "overlays"
+
+    @property
+    def packs_dir(self) -> Path:
+        return self.trail_dir / "packs"
+
+    @property
+    def reports_dir(self) -> Path:
+        return self.trail_dir / "reports"
+
+    @property
     def cache_dir(self) -> Path:
         return self.trail_dir / "cache"
 
@@ -104,6 +116,9 @@ class TrailWorkspace:
         self.context_dir.mkdir(exist_ok=True)
         self.audits_dir.mkdir(exist_ok=True)
         self.skills_memory_dir.mkdir(parents=True, exist_ok=True)
+        self.skills_overlays_dir.mkdir(parents=True, exist_ok=True)
+        self.packs_dir.mkdir(exist_ok=True)
+        self.reports_dir.mkdir(exist_ok=True)
         self.cache_dir.mkdir(exist_ok=True)
         self.transcripts_dir.mkdir(exist_ok=True)
 

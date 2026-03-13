@@ -5,7 +5,10 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .defaults import active_packs, save_defaults
 from .events import emit_event, utc_now
+from .overlay import save_skill_overlay
+from .packs import save_pack
 from .registry import global_registry
 from .skills import resolve_skill
 from .workspace import TrailWorkspace
@@ -297,10 +300,45 @@ def setup_migration_pack(
     workspace.write_json(migration_checklist_path(workspace), checklist)
     _write_report_template(workspace, config, checklist)
 
+    pack = save_pack(
+        workspace,
+        {
+            "slug": "migration-audit",
+            "title": "Migration Audit",
+            "kind": "audit",
+            "summary": "Business rules, EUI21/ECL21 conventions, migration gaps, and critical flows for this migration.",
+            "sources": knowledge_entries,
+            "facts": [fact for category in categories for fact in _dedupe_facts(category["items"])],
+            "directives": [
+                "Verify legacy business behavior, not just visible migration.",
+                "Check EUI21 / ECL21 conventions separately from business correctness.",
+                "Prioritize critical flows and runtime-risk areas first.",
+            ],
+        },
+    )
+    save_defaults(workspace, active_packs=sorted({*active_packs(workspace), pack["slug"]}))
+    if skill:
+        save_skill_overlay(
+            workspace,
+            skill_name=skill["slug"],
+            project_summary="Migration audit project with imported business rules, conventions, gaps, and critical flows.",
+            current_focus="Audit critical flows first, then the highest-risk migration gaps.",
+            directives=[
+                "Use imported migration knowledge before judging parity.",
+                "Treat Step 2 as the main runtime-risk area until revalidated.",
+            ],
+            avoid=[
+                "Do not assume migration is complete because the UI looks modernized.",
+                "Do not replace repo-proven patterns with theoretical showcase variants.",
+            ],
+            pack_slugs=[pack["slug"]],
+        )
+
     return {
         "project": project,
         "skill": skill,
         "agent": agent,
+        "pack": pack,
         "migration_pack": config,
         "checklist_path": str(migration_checklist_path(workspace)),
         "report_template_path": str(migration_report_template_path(workspace)),
