@@ -164,6 +164,7 @@ def build_context_pack(
         "next_step": state.get("next_step"),
         "open_blockers": state.get("open_blockers") or [],
         "recent_decisions": state.get("recent_decisions") or [],
+        "recent_findings": state.get("recent_findings") or [],
         "recent_failures": state.get("recent_failures") or [],
         "briefing": briefing,
         "skill_overlay": overlay,

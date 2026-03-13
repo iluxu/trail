@@ -5,6 +5,7 @@ import os
 import sys
 from typing import Any
 
+from .audit import record_finding
 from .operations import (
     build_context_pack,
     build_startup_brief,
@@ -19,7 +20,7 @@ from .operations import (
 )
 from .overlay import build_skill_overlay
 from .packs import list_packs, load_pack
-from .reporting import build_manager_report
+from .reporting import build_manager_report, build_risk_register
 from .workspace import TrailWorkspace
 
 
@@ -75,6 +76,11 @@ def _tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {"type": "object", "properties": {}},
         },
         {
+            "name": "trail_get_risk_register",
+            "description": "Return the current Trail risk register. Call this when prioritizing risks, blockers, audit gaps, or runtime concerns.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
             "name": "trail_search_knowledge",
             "description": "Search retained Trail knowledge and linked skill files. Call this before answering doc/spec questions from memory.",
             "inputSchema": {
@@ -119,6 +125,23 @@ def _tool_definitions() -> list[dict[str, Any]]:
                     "summary": {"type": "string"},
                     "reason": {"type": "string"},
                     "impact": {"type": "string"},
+                },
+                "required": ["summary"],
+            },
+        },
+        {
+            "name": "trail_record_finding",
+            "description": "Record an audit or review finding in Trail. Call this when you confirm a gap, risk, compliance issue, or needs-verification item.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "summary": {"type": "string"},
+                    "severity": {"type": "string"},
+                    "status": {"type": "string"},
+                    "category": {"type": "string"},
+                    "source": {"type": "string"},
+                    "evidence": {"type": "string"},
+                    "recommendation": {"type": "string"},
                 },
                 "required": ["summary"],
             },
@@ -206,6 +229,9 @@ def _call_tool(workspace: TrailWorkspace, name: str, arguments: dict[str, Any]) 
     if name == "trail_get_manager_report":
         return {"report": build_manager_report(workspace)}
 
+    if name == "trail_get_risk_register":
+        return {"risk_register": build_risk_register(workspace)}
+
     if name == "trail_search_knowledge":
         query = arguments.get("query")
         if not isinstance(query, str) or not query.strip():
@@ -251,6 +277,22 @@ def _call_tool(workspace: TrailWorkspace, name: str, arguments: dict[str, Any]) 
             severity=arguments.get("severity"),
             owner=arguments.get("owner"),
             workaround=arguments.get("workaround"),
+        )
+        return {"ok": True, "event_id": event["id"]}
+
+    if name == "trail_record_finding":
+        summary = arguments.get("summary")
+        if not isinstance(summary, str) or not summary.strip():
+            raise ValueError("trail_record_finding.summary must be a non-empty string")
+        event = record_finding(
+            workspace,
+            summary=summary,
+            severity=arguments.get("severity"),
+            status=arguments.get("status"),
+            category=arguments.get("category"),
+            source=arguments.get("source"),
+            evidence=arguments.get("evidence"),
+            recommendation=arguments.get("recommendation"),
         )
         return {"ok": True, "event_id": event["id"]}
 

@@ -18,6 +18,7 @@ def reduce_state(workspace: TrailWorkspace) -> dict[str, Any]:
     open_blockers: dict[str, dict[str, Any]] = {}
     decisions: list[dict[str, Any]] = []
     recent_failures: list[dict[str, Any]] = []
+    findings: list[dict[str, Any]] = []
     docs: dict[str, dict[str, Any]] = {}
     specs: dict[str, dict[str, Any]] = {}
     sessions: list[str] = []
@@ -100,6 +101,19 @@ def reduce_state(workspace: TrailWorkspace) -> dict[str, Any]:
             specs[key] = spec
         elif kind == "next_step_set":
             next_step = payload.get("summary") or next_step
+        elif kind == "finding_recorded":
+            findings.append(
+                {
+                    "summary": payload.get("summary"),
+                    "severity": payload.get("severity"),
+                    "status": payload.get("status"),
+                    "category": payload.get("category"),
+                    "source": payload.get("source"),
+                    "evidence": payload.get("evidence"),
+                    "recommendation": payload.get("recommendation"),
+                    "ts": event.get("ts"),
+                }
+            )
 
     state: dict[str, Any] = {
         "generated_at": utc_now(),
@@ -113,6 +127,7 @@ def reduce_state(workspace: TrailWorkspace) -> dict[str, Any]:
         "open_blockers": list(open_blockers.values()),
         "recent_failures": _trim_items(recent_failures),
         "recent_decisions": _trim_items(decisions),
+        "recent_findings": _trim_items(findings),
         "docs": _trim_items(list(docs.values())),
         "specs": _trim_items(list(specs.values())),
         "event_counts": dict(event_counts),
@@ -120,5 +135,6 @@ def reduce_state(workspace: TrailWorkspace) -> dict[str, Any]:
     workspace.write_json(workspace.current_state_path, state)
     workspace.write_json(workspace.state_dir / "blockers.json", {"items": state["open_blockers"]})
     workspace.write_json(workspace.state_dir / "decisions.json", {"items": state["recent_decisions"]})
+    workspace.write_json(workspace.state_dir / "findings.json", {"items": state["recent_findings"]})
     workspace.write_json(workspace.state_dir / "docs.json", {"items": state["docs"], "specs": state["specs"]})
     return state

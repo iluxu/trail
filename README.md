@@ -16,6 +16,9 @@ Trail is a Codex-first wrapper that watches work, records structured events, reb
 - `trail overlay ...` manages the local dynamic skill overlay in `.trail/skills/overlays/`
 - `trail pack ...` manages local project packs in `.trail/packs/`
 - `trail report manager` generates a manager-ready project report
+- `trail report risks` generates the current Trail risk register
+- `trail finding ...` records and lists structured audit findings
+- `trail audit screen ...` and `trail audit diff ...` run first-class audits with Trail context
 - `trail run` wraps an interactive command, defaulting to `codex`
 - `trail mcp` exposes Trail as a local MCP server
 - `.trail/events.jsonl` is the source of truth
@@ -41,6 +44,10 @@ trail migration run "Check whether the migrated project preserves the old busine
 trail overlay update eui21 --project-summary "Migration project" --directive "Use repo-proven EUI21 patterns"
 trail pack import delivery-rules --file references/delivery.md --activate
 trail report manager
+trail report risks
+trail finding add "Step 2 save refresh still flaky" --severity high --status open --category migration
+trail audit screen "Labelling Indications > Edit > Step 2" --dry-run
+trail audit diff --base HEAD~1 --dry-run
 trail
 ```
 

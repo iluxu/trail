@@ -17,6 +17,7 @@ except ImportError:  # Windows
 
 from .events import emit_event, utc_now
 from .defaults import active_agent_name, active_mode, active_packs, active_skill_name, save_defaults
+from .audit import build_audit_diff_prompt, build_audit_screen_prompt, get_git_diff, record_finding
 from .migration import (
     build_migration_prompt,
     load_migration_pack,
@@ -40,7 +41,7 @@ from .operations import (
 from .packs import activate_pack, import_pack_from_files, list_packs, load_pack
 from .registry import global_registry
 from .reducer import reduce_state
-from .reporting import build_manager_report, render_manager_report
+from .reporting import build_manager_report, build_risk_register, render_manager_report
 from .skills import build_skill_briefing, resolve_skill, trail_usage_guidance
 from .workspace import TrailWorkspace
 
@@ -346,10 +347,13 @@ def cmd_run(args: argparse.Namespace) -> int:
         )
 
     reduce_state(workspace)
+    auto_handoff = create_handoff(workspace, label=f"auto-{session_id}")
     build_context_pack(workspace, skill_name=skill_name, user_task=args.goal)
     if exit_code != 0:
         print(f"Trail run exited with code {exit_code}.")
         print(f"Transcript: {transcript_path}")
+    else:
+        print(f"Trail auto-handoff: {auto_handoff['md_path']}")
     return exit_code
 
 
@@ -854,6 +858,88 @@ def cmd_report_manager(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_report_risks(args: argparse.Namespace) -> int:
+    workspace = TrailWorkspace.discover()
+    init_workspace(workspace)
+    _print_json(build_risk_register(workspace))
+    return 0
+
+
+def cmd_finding_add(args: argparse.Namespace) -> int:
+    workspace = TrailWorkspace.discover()
+    init_workspace(workspace)
+    event = record_finding(
+        workspace,
+        summary=args.summary,
+        severity=args.severity,
+        status=args.status,
+        category=args.category,
+        source=args.source,
+        evidence=args.evidence,
+        recommendation=args.recommendation,
+    )
+    reduce_state(workspace)
+    _print_json({"ok": True, "event_id": event["id"]})
+    return 0
+
+
+def cmd_finding_list(args: argparse.Namespace) -> int:
+    workspace = TrailWorkspace.discover()
+    init_workspace(workspace)
+    state = load_state(workspace)
+    items = state.get("recent_findings") or []
+    if args.status:
+        items = [item for item in items if item.get("status") == args.status]
+    if args.severity:
+        items = [item for item in items if item.get("severity") == args.severity]
+    _print_json({"items": items})
+    return 0
+
+
+def cmd_audit_screen(args: argparse.Namespace) -> int:
+    workspace = TrailWorkspace.discover()
+    init_workspace(workspace)
+    state = load_state(workspace)
+    task = " ".join(args.task).strip() or None
+    prompt = build_audit_screen_prompt(workspace, screen=args.screen, task=task, state=state)
+    if args.dry_run:
+        print(prompt)
+        return 0
+    run_args = argparse.Namespace(
+        goal=task or state.get("current_goal"),
+        command=["codex", prompt],
+        skill_name=active_skill_name(workspace),
+        bootstrap=False,
+    )
+    return cmd_run(run_args)
+
+
+def cmd_audit_diff(args: argparse.Namespace) -> int:
+    workspace = TrailWorkspace.discover()
+    init_workspace(workspace)
+    state = load_state(workspace)
+    task = " ".join(args.task).strip() or None
+    diff_text = get_git_diff(workspace, base_ref=args.base, paths=args.path or [])
+    prompt = build_audit_diff_prompt(
+        workspace,
+        diff_text=diff_text,
+        base_ref=args.base,
+        paths=args.path or [],
+        task=task,
+        state=state,
+    )
+    if args.dry_run:
+        print(prompt)
+        return 0
+    run_args = argparse.Namespace(
+        goal=task or state.get("current_goal"),
+        command=["codex", prompt],
+        skill_name=active_skill_name(workspace),
+        bootstrap=False,
+    )
+    return cmd_run(run_args)
+
+
 def _agent_prompt(agent: dict, workspace: TrailWorkspace, state: dict, user_task: str | None) -> str:
     skill_slug = None
     linked_skills = agent.get("linked_skills") or []
@@ -1325,6 +1411,43 @@ def build_parser() -> argparse.ArgumentParser:
     report_manager_parser = report_subparsers.add_parser("manager", help="Generate a manager-ready status report")
     report_manager_parser.add_argument("--json", action="store_true")
     report_manager_parser.set_defaults(func=cmd_report_manager)
+
+    report_risks_parser = report_subparsers.add_parser("risks", help="Generate the current Trail risk register")
+    report_risks_parser.set_defaults(func=cmd_report_risks)
+
+    finding_parser = subparsers.add_parser("finding", help="Manage structured audit and review findings")
+    finding_subparsers = finding_parser.add_subparsers(dest="finding_command", required=True)
+
+    finding_add_parser = finding_subparsers.add_parser("add", help="Record a finding")
+    finding_add_parser.add_argument("summary")
+    finding_add_parser.add_argument("--severity")
+    finding_add_parser.add_argument("--status")
+    finding_add_parser.add_argument("--category")
+    finding_add_parser.add_argument("--source")
+    finding_add_parser.add_argument("--evidence")
+    finding_add_parser.add_argument("--recommendation")
+    finding_add_parser.set_defaults(func=cmd_finding_add)
+
+    finding_list_parser = finding_subparsers.add_parser("list", help="List recent findings")
+    finding_list_parser.add_argument("--severity")
+    finding_list_parser.add_argument("--status")
+    finding_list_parser.set_defaults(func=cmd_finding_list)
+
+    audit_parser = subparsers.add_parser("audit", help="Run first-class Trail audits")
+    audit_subparsers = audit_parser.add_subparsers(dest="audit_command", required=True)
+
+    audit_screen_parser = audit_subparsers.add_parser("screen", help="Audit a screen or flow with Trail context")
+    audit_screen_parser.add_argument("screen")
+    audit_screen_parser.add_argument("task", nargs="*")
+    audit_screen_parser.add_argument("--dry-run", action="store_true")
+    audit_screen_parser.set_defaults(func=cmd_audit_screen)
+
+    audit_diff_parser = audit_subparsers.add_parser("diff", help="Audit a git diff with Trail context")
+    audit_diff_parser.add_argument("task", nargs="*")
+    audit_diff_parser.add_argument("--base", default="HEAD")
+    audit_diff_parser.add_argument("--path", action="append")
+    audit_diff_parser.add_argument("--dry-run", action="store_true")
+    audit_diff_parser.set_defaults(func=cmd_audit_diff)
 
     mcp_parser = subparsers.add_parser("mcp", help="Run the Trail MCP stdio server")
     mcp_parser.set_defaults(func=cmd_mcp)

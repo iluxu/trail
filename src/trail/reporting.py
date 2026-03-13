@@ -15,6 +15,7 @@ def build_manager_report(workspace: TrailWorkspace) -> dict[str, Any]:
     conversations = list_project_conversations(workspace, limit=3)
     risk_items = [item.get("summary") or item.get("error_signature") for item in (state.get("open_blockers") or [])]
     risk_items.extend(item.get("error_signature") for item in (state.get("recent_failures") or []))
+    risk_items.extend(item.get("summary") for item in (state.get("recent_findings") or []) if item.get("status") in {"open", "needs_verification"})
     done_items = [item.get("summary") for item in (state.get("recent_decisions") or []) if item.get("summary")]
     if overlay:
         done_items.extend([f"Skill overlay active for {skill_name}", *[f"Pack active: {pack.get('title')}" for pack in overlay.get("packs") or []]])
@@ -38,6 +39,45 @@ def build_manager_report(workspace: TrailWorkspace) -> dict[str, Any]:
         "active_overlay": overlay,
     }
     return report
+
+
+def build_risk_register(workspace: TrailWorkspace) -> dict[str, Any]:
+    state = load_state(workspace)
+    risks: list[dict[str, Any]] = []
+    for blocker in state.get("open_blockers") or []:
+        risks.append(
+            {
+                "type": "blocker",
+                "summary": blocker.get("summary"),
+                "severity": blocker.get("severity") or "high",
+                "owner": blocker.get("owner"),
+            }
+        )
+    for finding in state.get("recent_findings") or []:
+        if finding.get("status") in {"open", "needs_verification"}:
+            risks.append(
+                {
+                    "type": "finding",
+                    "summary": finding.get("summary"),
+                    "severity": finding.get("severity") or "medium",
+                    "owner": None,
+                }
+            )
+    for failure in state.get("recent_failures") or []:
+        risks.append(
+            {
+                "type": "failure",
+                "summary": failure.get("error_signature"),
+                "severity": "medium",
+                "owner": None,
+            }
+        )
+    return {
+        "project_root": str(workspace.root),
+        "goal": state.get("current_goal"),
+        "next_step": state.get("next_step"),
+        "risks": risks[:20],
+    }
 
 
 def render_manager_report(report: dict[str, Any]) -> str:
