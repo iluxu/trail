@@ -185,8 +185,9 @@ def _attach_trail_mcp(
 
 def _spawn_with_transcript(command: list[str], transcript_path: Path) -> int:
     transcript_path.parent.mkdir(parents=True, exist_ok=True)
-    if os.name == "nt" or pty is None:
-        return _spawn_windows(command, transcript_path)
+    use_pty = os.environ.get("TRAIL_USE_PTY", "").strip() == "1"
+    if os.name == "nt" or pty is None or not use_pty:
+        return _spawn_direct(command, transcript_path)
 
     transcript = transcript_path.open("ab")
 
@@ -209,14 +210,14 @@ def _spawn_with_transcript(command: list[str], transcript_path: Path) -> int:
     return os.waitstatus_to_exitcode(status) if os.WIFEXITED(status) else 1
 
 
-def _spawn_windows(command: list[str], transcript_path: Path) -> int:
+def _spawn_direct(command: list[str], transcript_path: Path) -> int:
     print(f"Trail launching: {shlex.join(command)}")
     with transcript_path.open("ab") as transcript:
         transcript.write(
             (
-                "Windows native run\n"
+                "Direct interactive run\n"
                 f"Command: {shlex.join(command)}\n"
-                "Transcript capture is currently metadata-only on Windows; interactive stdout/stderr is sent directly to the console.\n\n"
+                "Transcript capture is metadata-only in direct mode; interactive stdout/stderr is sent directly to the console.\n\n"
             ).encode("utf-8")
         )
         transcript.flush()
@@ -226,11 +227,11 @@ def _spawn_windows(command: list[str], transcript_path: Path) -> int:
             transcript.write(
                 (
                     f"Command not found: {command[0]}\n"
-                    "Trail could not find `codex` in PATH. Verify that `codex --version` works in this same PowerShell.\n"
+                    "Trail could not find the command in PATH. Verify that it works in this same shell.\n"
                 ).encode("utf-8")
             )
             transcript.flush()
-            print("Trail could not find `codex` in PATH.")
+            print(f"Trail could not find `{command[0]}` in PATH.")
             print(f"Transcript: {transcript_path}")
             return 127
         transcript.write(f"\nProcess exited with code {completed.returncode}\n".encode("utf-8"))
